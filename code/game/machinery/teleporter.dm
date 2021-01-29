@@ -168,6 +168,8 @@
 /obj/machinery/computer/teleporter/proc/set_target(var/obj/O)
 	src.locked = O
 	GLOB.destroyed_event.register(locked, src, .proc/target_lost)
+	if(hub && station && station.engaged)
+		hub.portal_visuals.setup_visuals(locked)
 
 /obj/machinery/computer/teleporter/Destroy()
 	clear_target()
@@ -199,6 +201,13 @@
 	idle_power_usage = 10
 	active_power_usage = 2000
 	var/obj/machinery/computer/teleporter/com
+	/// Visual object for handling the viscontents
+	var/obj/effect/portal_effect/portal_visuals
+
+/obj/machinery/teleport/hub/Initialize()
+	. = ..()
+	portal_visuals = new
+	vis_contents += portal_visuals
 
 /obj/machinery/teleport/hub/Bumped(var/atom/movable/M)
 	spawn()
@@ -213,8 +222,16 @@
 		com.locked = null
 	return
 
+/obj/machinery/teleport/hub/update_use_power(new_use_power)
+	. = ..()
+	if(new_use_power == POWER_USE_IDLE)
+		portal_visuals.reset_visuals()
+	else
+		portal_visuals.setup_visuals(com.locked)
+
 /obj/machinery/teleport/hub/Destroy()
 	com = null
+	QDEL_NULL(portal_visuals)
 	return ..()
 
 /obj/machinery/teleport/station
@@ -291,3 +308,38 @@
 		icon_state = panel_open ? "controller-o" : "controller-p"
 	else
 		icon_state = "controller"
+
+/obj/effect/portal_effect
+	appearance_flags = KEEP_TOGETHER|TILE_BOUND|PIXEL_SCALE
+	mouse_opacity = 0
+	vis_flags = VIS_INHERIT_ID
+	layer = BELOW_OBJ_LAYER  //Slightly lower than gateway itself
+	var/alpha_icon = 'icons/obj/machines/teleporter.dmi'
+	var/alpha_icon_state = "portal_mask"
+	var/obj/item/our_destination
+
+/obj/effect/portal_effect/proc/setup_visuals(obj/item/I)
+	our_destination = I
+	update_portal_filters()
+
+/obj/effect/portal_effect/proc/reset_visuals()
+	our_destination = null
+	update_portal_filters()
+
+/obj/effect/portal_effect/proc/update_portal_filters()
+	filters = null
+
+	vis_contents = null
+
+	if(!our_destination)
+		return
+
+	filters += filter("type" = "alpha", "icon" = icon(alpha_icon, alpha_icon_state), "x" = 0, "y" = 0)
+	filters += filter("type" = "blur", "size" = 0.5)
+	filters += filter("type" = "ripple", "size" = 2, "radius" = 1, "falloff" = 1)
+
+	animate(filters[3], time = 1.3 SECONDS, loop = -1, easing = LINEAR_EASING, radius = 16)
+
+	var/turf/center_turf = get_turf(our_destination)
+
+	vis_contents += center_turf
